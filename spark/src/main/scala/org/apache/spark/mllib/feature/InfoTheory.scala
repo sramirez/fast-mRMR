@@ -19,8 +19,9 @@ package org.apache.spark.mllib.feature
 
 import breeze.linalg.{DenseVector => BDV, SparseVector => BSV, Vector => BV}
 
-import org.apache.spark.rdd.RDD
-import org.apache.spark.SparkContext._ 
+
+import org.apache.spark.SparkContext._
+import org.apache.spark.rdd._
 import org.apache.spark.broadcast.Broadcast
 
 /**
@@ -28,7 +29,7 @@ import org.apache.spark.broadcast.Broadcast
  */
 object InfoTheory {
 
-  private val log2 = { x: Double => math.log(x) / math.log(2) } 
+  private val log2 = { x: Double => math.log(x) / math.log(2) }
   
   /**
    * Calculate entropy for the given frequencies.
@@ -51,38 +52,14 @@ object InfoTheory {
   private[feature] def entropy(freqs: Seq[Long]): Double = {
     entropy(freqs, freqs.reduce(_ + _))
   }
-
-  private val createCombiner: ((Byte, Long)) => (Long, Long, Long) = {
-    case (1, q) => (q, 0, 0)
-    case (2, q) => (0, q, 0)
-    case (3, q) => (0, 0, q)
-  }
-
-  private val mergeValues: ((Long, Long, Long), (Byte, Long)) => 
-      (Long, Long, Long) = {
-    case ((qxy, qx, qy), (ref, q)) =>
-      ref match {
-        case 1 => (qxy + q, qx, qy)
-        case 2 => (qxy, qx + q, qy)
-        case 3 => (qxy, qx, qy + q)
-      }
-  }
-
-  private val mergeCombiners: (
-      (Long, Long, Long), 
-      (Long, Long, Long)) => 
-      (Long, Long, Long) = {
-    case ((qxy1, qx1, qy1), (qxy2, qx2, qy2)) =>
-      (qxy1 + qxy2, qx1 + qx2, qy1 + qy2)
-  }
+  
   
   /* Pair generator for dense data */
   private def DenseGenerator(
-      v: BV[Byte], 
+      dv: BDV[Byte], 
       varX: Broadcast[Seq[Int]],
       varY: Broadcast[Seq[Int]]) = {
     
-     val dv = v.asInstanceOf[BDV[Byte]]   
      var pairs = Seq.empty[((Any, Byte, Byte), Long)]
      val multY = varY.value.length > 1
      
@@ -94,14 +71,69 @@ object InfoTheory {
      }     
      pairs
   } 
+  
+  /* Pair generator for dense data */
+  private def SparseGenerator(
+      dv: BSV[Byte], 
+      varX: Broadcast[Seq[Int]],
+      varY: Broadcast[Seq[Int]]) = {
+        
+     var dpairs = Seq.empty[((Any, Byte, Byte), Long)]
+     val multY = varY.value.length > 1
+     
+     for(xi <- varX.value; if dv(xi) != 0){
+       val xa = dv(xi)
+       for(yi <- varY.value; if dv(yi) != 0) {
+         val ya = dv(yi)
+         val indexes = if(multY) (xi, yi) else xi
+         dpairs = ((indexes, xa, ya), 1L) +: dpairs
+       }
+     }     
+     dpairs
+  }
+  
+  private def zerosGenerator(
+      data: RDD[BSV[Byte]],
+      bvarX: Broadcast[Seq[Int]],
+      bvarY: Broadcast[Seq[Int]]) = {
+    
+    val accZeros = data.mapPartitions({ it => 
+      var part = Map.empty[(Int, Byte), Array[Int]]
+      if(it.hasNext) {  
+        for (sv <- it) {
+          val yelems = sv(bvarY.value).pairs.iterator.toArray // it is repeatedly accessed
+          for (i <- 0 until bvarX.value.size if sv(bvarX.value(i)) == 0) {
+            for((yi, yval) <- yelems) {
+              // sum up 1 to the global vector
+              val v = part.getOrElse((yi, yval), new Array[Int](bvarX.value.size))
+              v(i) = v(i) + 1
+              part += ((yi, yval) -> v)
+            }
+          }
+        }
+      }
+      part.toIterator          
+    }).reduceByKey((_ , _).zipped.map(_ + _))
+     
+    accZeros.flatMap{ case ((yi, ya), acc) =>
+      var dpairs = Seq.empty[((Any, Byte, Byte), Long)]
+      for(i <- 0 until bvarX.value.size if acc(i) != 0) {        
+        val xi = bvarX.value(i)
+        val idx = if(bvarY.value.length > 1) (xi, yi) else xi
+        dpairs = ((idx, 0: Byte, ya), acc(i).toLong) +: dpairs
+      }
+      dpairs
+    }
+  }
     
   
-    /**
-   * Method that calculates mutual information (MI) for several variables. Indexes must be disjoint.
+  /**
+   * Method that calculates mutual information (MI)
+   * simultaneously for several variables. Indexes must be disjoint.
    *
    * @param data RDD of data (first element is the class attribute)
-   * @param varX Indexes of primary variables
-   * @param varY Indexes of secondary variable
+   * @param varX Indexes of primary variables (must be disjoint with Y)
+   * @param varY Indexes of secondary variable (must be disjoint with X)
    * @param n    Number of instances
    * @return     RDD of (primary var, MI)
    * 
@@ -122,19 +154,24 @@ object InfoTheory {
     val bvarX = sc.broadcast(varX)
     val bvarY = sc.broadcast(varY)
     
-    // Common function to generate pairs, it choose between sparse and dense processing 
-    data.first match {
-      case v: BDV[Byte] =>
-        val generator = DenseGenerator(_: BV[Byte], bvarX, bvarY)
-        calculateMIDenseData(data, generator, varY(0), n)
-      case v: BSV[Byte] =>     
-        // Not implemented yet!
-        throw new NotImplementedError()
+    // Common function to generate pairs, it chooses between sparse and dense processing 
+    val pairs = data.first match {
+      case _: BDV[Byte] =>
+        val denseData = data.map(_.asInstanceOf[BDV[Byte]])
+        val generator = DenseGenerator(_: BDV[Byte], bvarX, bvarY)
+        denseData.flatMap(generator).reduceByKey(_ + _)
+      case _: BSV[Byte] =>     
+        val sparseData = data.map(_.asInstanceOf[BSV[Byte]])
+        val generator = SparseGenerator(_: BSV[Byte], bvarX, bvarY)
+        val densePairs = sparseData.flatMap(generator).reduceByKey(_ + _)
+        val zeroPairs = zerosGenerator(sparseData, bvarX, bvarY)
+        densePairs.union(zeroPairs)        
     }
+    computeMI(pairs, varY(0), n)
   }
   
   /**
-   * Submethod that calculates MI for dense data.
+   * Submethod that calculates MIfor dense data.
    *
    * @param data RDD of data (first element is the class attribute)
    * @param pairsGenerator Function that generates the combinations between variables
@@ -143,21 +180,44 @@ object InfoTheory {
    * @return     RDD of (primary var, MI)
    * 
    */
-  private def calculateMIDenseData(
-      data: RDD[BV[Byte]],
-      pairsGenerator: BV[Byte] => Seq[((Any, Byte, Any), Long)],
+  private[mllib] def computeMI(
+      pairs: RDD[((Any, Byte, Byte), Long)],
       firstY: Int,
       n: Long) = {
-
-    val combinations = data.flatMap(pairsGenerator).reduceByKey(_ + _)
+    
+  val combinations = pairs
     // Split each combination keeping instance keys
       .flatMap {
-      case ((k, x, y), q) =>
+      case ((k, x, y), q) =>            
         Seq(((k, 1:Byte /* "xy" */ , (x, y)),    (Set.empty,  q)),
             ((k, 2:Byte /* "x" */  , x),         (Set(y), q)),
             ((k, 3:Byte /* "y" */  , y),         (Set(x), q)))
     }
+    
+    val createCombiner: ((Byte, Long)) => (Long, Long, Long) = {
+      case (1, q) => (q, 0, 0)
+      case (2, q) => (0, q, 0)
+      case (3, q) => (0, 0, q)
+    }
 
+    val mergeValues: ((Long, Long, Long), (Byte, Long)) => 
+        (Long, Long, Long) = {
+      case ((qxy, qx, qy), (ref, q)) =>
+        ref match {
+          case 1 => (qxy + q, qx, qy)
+          case 2 => (qxy, qx + q, qy)
+          case 3 => (qxy, qx, qy + q)
+        }
+    }
+
+    val mergeCombiners: (
+        (Long, Long, Long), 
+        (Long, Long, Long)) => 
+        (Long, Long, Long) = {
+      case ((qxy1, qx1, qy1), (qxy2, qx2, qy2)) =>
+        (qxy1 + qxy2, qx1 + qx2, qy1 + qy2)
+    }
+  
     // Count frequencies for each combination
     val grouped_frequencies = combinations.reduceByKey({
       case ((keys1, q1), (keys2, q2)) => (keys1 ++ keys2, q1 + q2)
@@ -167,15 +227,15 @@ object InfoTheory {
       case ((k, ref, value), (keys, q))  => 
           val none: Option[Byte] = None
           ref match {
-            case 1 => 
-              val (x, z) = value.asInstanceOf[(Byte, Byte)]
-              for (y <- keys) yield ((k, x, y.asInstanceOf[Byte]), (1:Byte, q))
+            case 1 =>
+                val (x, y) = value.asInstanceOf[(Byte, Byte)]
+                Seq(((k, x, y), (1:Byte, q)))
             case 2 =>
-              val (y, z) = value.asInstanceOf[(Byte, Byte)]
-              for (x <- keys) yield ((k, x.asInstanceOf[Byte], y), (2:Byte, q))
+              val x = value.asInstanceOf[Byte]
+              for (y <- keys) yield ((k, x, y.asInstanceOf[Byte]), (2:Byte, q))
             case 3 =>
-              val (x, y, z) = value.asInstanceOf[(Byte, Byte, Byte)]
-              Seq(((k, x, y), (3:Byte, q)))
+              val y = value.asInstanceOf[Byte]
+              for (x <- keys) yield ((k, x.asInstanceOf[Byte], y), (3:Byte, q))
           }        
     })
     // Group by origin
@@ -188,11 +248,11 @@ object InfoTheory {
         case (kx: Int, ky: Int) => (kx, ky)
         case kx: Int => (kx, firstY)
       }           
-      // MI by instance
+      
       val pxy = qxy.toDouble / n
       val px = qx.toDouble / n
       val py = qy.toDouble / n
-      (finalKey, (pxy * log2(pxy / (px * py))))
+      (finalKey, pxy * log2(pxy / (px * py)))
     })
     // Compute the final result by attribute
     .reduceByKey(_ + _)
