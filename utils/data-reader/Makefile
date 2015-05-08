@@ -12,25 +12,22 @@ CFLAGS= -c -m64 -O3 -Wall $(IDIR)
 LDFLAGS= $(LIBS) $(LDIR) $(LIBS)
 
 # Sources and Common clases sources
-SOURCES= main.cpp
-CSOURCES= $(CDIR)Histogram.cpp $(CDIR)JointProb.cpp $(CDIR)MutualInfo.cpp $(CDIR)ProbTable.cpp $(CDIR)RawData.cpp
+SOURCES= main.cpp StringTokenizer.cpp
 
 # Objects
 OBJECTS=$(SOURCES:.cpp=.o)
-COBJECTS=$(CSOURCES:.cpp=.o)
 
 # Name of the executable
-EXECUTABLE=fast-mrmr
+EXECUTABLE=mrmr-reader
 
-all: $(SOURCES) $(CSOURCES) $(CUSOURCES) $(EXECUTABLE)
+all: $(SOURCES) $(EXECUTABLE)
 
-$(EXECUTABLE): $(OBJECTS) $(COBJECTS) $(CUOBJECTS)
-	$(CC) $(OBJECTS) $(COBJECTS) $(CUOBJECTS) $(LDFLAGS) -o $@
+$(EXECUTABLE): $(OBJECTS)
+	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
 
 .cpp.o: $(SOURCES) $(CSOURCES)
 	$(CC) $(CFLAGS) $< -o $@
 
 clean:
 	rm *.o
-	rm $(CDIR)*.o
-	rm fast-mrmr
+	rm mrmr-reader

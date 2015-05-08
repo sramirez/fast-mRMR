@@ -1,8 +1,18 @@
 /*
- * mrmr.cpp
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- *  Created on: 28/11/2013
- *      Author: iago
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "../plib/JointProb.h"
@@ -35,22 +45,25 @@ options parseOptions(int argc, char*argv[]) {
 	options opts;
 	opts.classIndex = 0;
 	opts.selectedFeatures = 10;
+	opts.file = "data.mrmr"
 
 	if (argc > 1) {
 		for (int i = 0; i < argc; ++i) {
+			if (strcmp(argv[i], "-f") == 0) {
+				opts.file = argv[i + 1];
+			}
+			if (strcmp(argv[i], "-a") == 0) {
+				opts.selectedFeatures = atoi(argv[i + 1]) - 1;
+			}
 			if (strcmp(argv[i], "-c") == 0) {
 				opts.classIndex = atoi(argv[i + 1]) - 1;
 			}
-			if (strcmp(argv[i], "-f") == 0) {
-				opts.selectedFeatures = atoi(argv[i + 1]);
-			}
 			if (strcmp(argv[i], "-h") == 0) {
 				printf(
-						"Mrmr by Iago lastra:\nOptions:\n-c <index of class feature>\t\tUsed to select index of class feature. (from 1 to features Size)\n-f <number of mrmr features required>\t Indicates the number of features to select.\n-h Prints this message");
+						"fast-mrmr:\nOptions:\n -f <inputfile>\t\tMRMR file generated using mrmrReader.\n-c <classindex>\t\tIndicates the class index in the dataset. Default: 0\n-a <nfeatures>\t Indicates the number of features to select.\n-h Prints this message");
 				exit(0);
 			}
 		}
-		//cout << endl;
 	}
 	return opts;
 }
@@ -68,12 +81,13 @@ int main(int argc, char* argv[]) {
 	vector<int> selectedFeatures;
 
 	Timer tm;
-	RawData rawData = RawData();
+	opts = parseOptions(argc, argv);
+	RawData rawData = RawData(opts.file);
 	tm.start();
 	ProbTable prob = ProbTable(rawData);
 	//cout << "Time CPU (histogram): " << tm.stop() << " ms" << endl;
 	MutualInfo mutualInfo = MutualInfo(rawData, prob);
-	opts = parseOptions(argc, argv);
+	
 
 	//printf("Using feature no: %i as class feature\n", opts.classIndex + 1);
 	//printf("%i features gonna be retrieved.\n", opts.selectedFeatures);
