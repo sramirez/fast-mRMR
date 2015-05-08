@@ -15,12 +15,7 @@ object FStest {
 
 	val conf = new SparkConf().setAppName("FS test")
 	val sc = new SparkContext(conf)
-	val rawdata = MLUtils.loadLibSVMFile(sc, "a2a.libsvm")
-	val data = rawdata.map{ lp => 
-		val newclass = if(lp.label == -1.0) 0 else 1
-		new LabeledPoint(newclass, lp.features)
-	}
-    
+	val data = MLUtils.loadLibSVMFile(sc, "a2a.libsvm")    
     	val criterion = new MrmrSelector()
     	val selector = InfoThSelector.train(criterion, data)
     
