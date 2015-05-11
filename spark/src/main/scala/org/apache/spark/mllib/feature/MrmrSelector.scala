@@ -17,28 +17,145 @@
 
 package org.apache.spark.mllib.feature
 
+
+import breeze.linalg.{DenseVector => BDV, SparseVector => BSV, Vector => BV}
+
+import org.apache.spark.SparkContext._
+import org.apache.spark.rdd.RDD
+import org.apache.spark.HashPartitioner
+import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.feature.{InfoTheory => IT}
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.mllib.linalg.{Vector, DenseVector, SparseVector}
+import org.apache.spark.annotation.Experimental
+import org.apache.spark.SparkException
+
 /**
- * Minimum-Redundancy Maximum-Relevance criterion (mRMR)
+ * Train a info-theory feature selection model according to a criterion. 
  */
-class MrmrSelector extends InfoThCriterion {
+class MrmrSelector private[feature] extends Serializable {
 
-  var redundance: Double = 0.0
-  var selectedSize: Int = 0
+  // Pool of criterions
+  private type Pool = RDD[(Int, MrmrCriterion)]
+  // Case class for criterions by feature
+  protected case class F(feat: Int, crit: Double) 
 
-  override def score = {
-    if (selectedSize != 0) {
-      relevance - redundance / selectedSize
-    } else {
-      relevance
+  /**
+   * Perform a info-theory selection process without pool optimization.
+   * 
+   * @param data Data points (first element is the class attribute).
+   * @param nToSelect Number of features to select.
+   * @return A list with the most relevant features and its scores.
+   * 
+   */
+  private[feature] def selectFeatures(data: RDD[BV[Byte]], nToSelect: Int) = {
+    
+    val nElements = data.count()
+    val nFeatures = data.first.size - 1
+    val label = 0
+    
+    // calculate relevance
+    val mutualInfo = IT.computeMutualInfo(data, 1 to nFeatures, Seq(label), nElements, nFeatures)
+    var pool = mutualInfo.map{case ((x, y), mi) => (x, new MrmrCriterion(mi))}
+      .collectAsMap()  
+    // Print most relevant features
+    val strRels = mutualInfo.collect().sortBy(-_._2)
+      .take(100)
+      .map({case ((f, _), mi) => f + "\t" + "%.4f" format mi})
+      .mkString("\n")
+    println("\n*** MaxRel features ***\nFeature\tScore\n" + strRels)  
+    // get maximum and select it
+    val firstMax = pool.maxBy(_._2.score)
+    var selected = Seq(F(firstMax._1, firstMax._2.score))
+    pool = pool - firstMax._1
+
+    while (selected.size < nToSelect) {
+      // update pool
+      val mutualInfo = IT.computeMutualInfo(data, pool.keys.toSeq, Seq(selected.head.feat), 
+        nElements, nFeatures) 
+        .map({ case ((x, _), crit) => (x, crit) })
+        .collectAsMap()
+        
+      pool.foreach({ case (k, crit) =>
+        mutualInfo.get(k) match {
+          case Some(v) => crit.update(v)
+          case None => 
+        }
+      })
+
+      // get maximum and save it
+      val max = pool.maxBy(_._2.score)
+      // select the best feature and remove from the whole set of features
+      selected = F(max._1, max._2.score) +: selected
+      pool = pool - max._1
+      
+
+    }    
+    selected.reverse
+  }
+  
+  private[feature] def run(
+      data: RDD[LabeledPoint], 
+      nToSelect: Int, 
+      poolSize: Int = 30) = {
+        
+        val requireByteValues = (l: Double, v: Vector) => {        
+          val values = v match {
+            case SparseVector(size, indices, values) =>
+              values
+            case DenseVector(values) =>
+              values
+          }
+          val condition = (value: Double) => value <= Byte.MaxValue && 
+            value >= Byte.MinValue && value % 1 == 0.0
+          if (!values.forall(condition(_)) || !condition(l)) {
+            throw new SparkException(s"mRMR selector requires integer values in range [0, 255]")
+          }
+        }
+        
+        val byteData: RDD[BV[Byte]] = data.map {
+          case LabeledPoint(label, values: SparseVector) => 
+            requireByteValues(label, values)
+            new BSV[Byte](0 +: values.indices.map(_ + 1), 
+              label.toByte +: values.values.toArray.map(_.toByte), values.size + 1)
+          case LabeledPoint(label, values: DenseVector) => 
+            requireByteValues(label, values)
+            new BDV[Byte](label.toByte +: values.toArray.map(_.toByte))
+        }
+
+        byteData.persist(StorageLevel.MEMORY_AND_DISK_SER)
+        val nFeatures = byteData.first.size - 1
+        require(nToSelect < nFeatures)
+        
+        val selected = selectFeatures(byteData, nToSelect)
+      
+        byteData.unpersist()
+      
+        // Print best features according to the mRMR measure
+        val out = selected.map{case F(feat, rel) => feat + "\t" + "%.4f".format(rel)}.mkString("\n")
+        println("\n*** mRMR features ***\nFeature\tScore\n" + out)
+        // Features must be sorted
+        new SelectorModel(selected.map{case F(feat, rel) => feat - 1}.sorted.toArray)
     }
-  }
-  override def init(relevance: Double): InfoThCriterion = {
-    this.setRelevance(relevance)
-  }
-  override def update(mi: Double): InfoThCriterion = {
-    redundance += mi
-    selectedSize += 1
-    this
-  }
-  override def toString: String = "MRMR"
 }
+
+object MrmrSelector {
+
+  /**
+   * Train a mRMR selection model according to a given criterion
+   * and return a subset of data.
+   *
+   * @param   data RDD of LabeledPoint (discrete data as integers in range [0, 255]).
+   * @param   nToSelect maximum number of features to select
+   * @return  A mRMR selector that selects a subset of features from the original dataset.
+   * 
+   * Note: LabeledPoint data must be integer values in double representation 
+   * with a maximum of 256 distinct values. In this manner, data can be transformed
+   * to byte class directly, making the selection process much more efficient. 
+   * 
+   */
+  def train(data: RDD[LabeledPoint], nToSelect: Int = 25) = {
+    new MrmrSelector().run(data, nToSelect)
+  }
+}
+
