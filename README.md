@@ -18,12 +18,12 @@ Here, we include implementations for this new proposal in several platforms.
 2. **CUDA implementation**: we also provide a GPU implementation using CUDA in order to speedup the previous version by taking advantage of GPU thread-parallelism. 
 3. **Apache Spark**: a Apache Spark's implementation of the algorithm is also included for large-scale problems, which require a distributed processing in order to obtain efficient solutions.
 
-## Project structure:
+## Project structure
 
-* _cpu_: C++ code for CPU.
-* _gpu_: CUDA code for GPU implementation.
-* _spark_: Scala code for distributed processing in Apache Spark platform.
-* _utils_: this contains a data reader program that transforms data in CSV format to the format required by fast-mRMR algorithm (in binary and columnar-wise format). It also includes a data generator method in case we want to generate synthetic data specifying the structure of this data.
+* _cpu_: C++ code for CPU ([+info](https://github.com/sramirez/fast-mRMR/wiki/CPU-version)).
+* _gpu_: CUDA code for GPU implementation ([+info](https://github.com/sramirez/fast-mRMR/wiki/GPU-version)).
+* _spark_: Scala code for distributed processing in Apache Spark platform ([+info](https://github.com/sramirez/fast-mRMR/wiki/Spark-version)).
+* _utils_: this contains a data reader program that transforms data in CSV format to the format required by fast-mRMR algorithm (in binary and columnar-wise format). It also includes a data generator method in case we want to generate synthetic data specifying the structure of this data ([+info](https://github.com/sramirez/fast-mRMR/wiki/Data-Reader)).
 * _examples_: a folder with examples for all versions implemented.   
 
 ## License
@@ -39,6 +39,3 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 [1] _"Feature selection based on mutual information: criteria of max-dependency, max-relevance, and min-redundancy,"_ Hanchuan Peng, Fuhui Long, and Chris Ding IEEE Transactions on Pattern Analysis and Machine Intelligence, Vol. 27, No. 8, pp.1226-1238, 2005.
 
-For further information, please take a look at our wiki:
-
-https://github.com/sramirez/fast-mRMR/wiki
