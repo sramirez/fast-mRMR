@@ -69,7 +69,7 @@ int main(int argc, char* argv[]) {
 
 //Parse console arguments.
 	if (argc < 2) {
-		printf("Usage: <inputfilename> [options]\n");
+		printf("Usage: <inputfilename>\n");
 		exit(-1);
 	}
 	char* inputFilename = argv[1];
