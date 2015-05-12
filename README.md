@@ -1,5 +1,3 @@
-Welcome to the fast-mRMR wiki!
-
 This is an improved greedy implementation of the classical feature selection method: minimum Redundancy and Maximum Relevance (mRMR); presented by Peng in [1]. 
 
 ## Main features
