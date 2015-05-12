@@ -1,12 +1,4 @@
+!#/bin/bash
 
 chmod +x mrmr-reader
 ./mrmr-reader data.csv
-
-Obtenemos data.mrmr
-
-
-"fast-mrmr:\nOptions:\n-c <classindex>\t\tIndicates the class index in the dataset. Default: 0\n-f <nfeatures>\t Indicates the number of features to select.\n-h Prints this message"
-
-./fast-mrmr -c 0 -f 10
-
-
