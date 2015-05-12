@@ -45,7 +45,7 @@ options parseOptions(int argc, char*argv[]) {
 	options opts;
 	opts.classIndex = 0;
 	opts.selectedFeatures = 10;
-	opts.file = "data.mrmr"
+	opts.file = "../data.mrmr";
 
 	if (argc > 1) {
 		for (int i = 0; i < argc; ++i) {
@@ -60,7 +60,7 @@ options parseOptions(int argc, char*argv[]) {
 			}
 			if (strcmp(argv[i], "-h") == 0) {
 				printf(
-						"fast-mrmr:\nOptions:\n -f <inputfile>\t\tMRMR file generated using mrmrReader.\n-c <classindex>\t\tIndicates the class index in the dataset. Default: 0\n-a <nfeatures>\t Indicates the number of features to select.\n-h Prints this message");
+						"fast-mrmr:\nOptions:\n -f <inputfile>\t\tMRMR file generated using mrmrReader (default: data.mrmr).\n-c <classindex>\t\tIndicates the class index in the dataset (default: 0).\n-a <nfeatures>\t Indicates the number of features to select (default: 10).\n-h Prints this message");
 				exit(0);
 			}
 		}

@@ -61,5 +61,6 @@ struct Timer {
 typedef struct options {
 	uint classIndex;
 	uint selectedFeatures;
+	char* file;
 } options;
 #endif /* UTILS_H_ */
