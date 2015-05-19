@@ -24,6 +24,7 @@ Histogram::Histogram(RawData & rd): rawData(rd) {
 Histogram::~Histogram() {
 }
 
+//Calculates the histogram for the given feature index.
 t_histogram Histogram::getHistogram(uint index) {
 	uint vr = rawData.getValuesRange(index);
 	t_feature data = rawData.getFeature(index);

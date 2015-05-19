@@ -28,6 +28,7 @@
 
 using namespace std;
 
+//Returns the index of the higher value in the classRelevances Vector different from classIndex
 uint getMaxRelevance(vector<double> classRelevances, uint classIndex) {
 	uint i = 0;
 	uint newFeature = -1;
@@ -85,12 +86,9 @@ int main(int argc, char* argv[]) {
 	RawData rawData = RawData(opts.file);
 	tm.start();
 	ProbTable prob = ProbTable(rawData);
-	//cout << "Time CPU (histogram): " << tm.stop() << " ms" << endl;
 	MutualInfo mutualInfo = MutualInfo(rawData, prob);
 	
 
-	//printf("Using feature no: %i as class feature\n", opts.classIndex + 1);
-	//printf("%i features gonna be retrieved.\n", opts.selectedFeatures);
 
 	//Get relevances between all features and class.
 	for (i = 0; i < rawData.getFeaturesSize(); ++i) {
@@ -103,11 +101,9 @@ int main(int argc, char* argv[]) {
 	selectedFeatures.push_back(newFeatureIndex);
 	lastFeatureIndex = newFeatureIndex;
 
-	//cout << "Feature\t Mrmr" << endl;
-	//cout << newFeatureIndex << ":\t " << relevances[newFeatureIndex] << endl;
 	cout << newFeatureIndex << ",";
 	//MRMR
-	while (selectedFeatures.size() < rawData.getFeaturesSize() - 1 //-1 porque la class feature se descarta
+	while (selectedFeatures.size() < rawData.getFeaturesSize() - 1 //-1 because class is discarded
 	and selectedFeatures.size() < opts.selectedFeatures) {
 		acum = -std::numeric_limits<double>::infinity();
 		for (j = 0; j < rawData.getFeaturesSize(); ++j) {
