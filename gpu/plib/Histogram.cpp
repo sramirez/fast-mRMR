@@ -35,7 +35,7 @@ Histogram::~Histogram() {
  * Calculates the feature histogram.
  *
  * If the feature has 64 different values or less, uses
- * histogram 64 to compute, otherwise uses histogramNaive.
+ * histogram 64 to compute, otherwise uses histogramNaive (See CUDA kernels).
  *
  * @param index : The index for the feature.
  * @return h_acum : The histogram with the bin count.
