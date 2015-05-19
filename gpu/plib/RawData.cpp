@@ -21,7 +21,7 @@
  *  Contains the RawData class and defines the basic
  *  datatypes for the project.
  *
- *  @author Iago Lastar (iagolast)
+ *  @author Iago Lastra (iagolast)
  */
 
 #include "RawData.h"

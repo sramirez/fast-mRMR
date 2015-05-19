@@ -45,6 +45,10 @@ void RawData::destroy() {
 	free(data);
 }
 
+/**Calculates
+ *	DataSize: Number of patterns or samples
+ *  FeaturesSize: Number of features
+ */
 void RawData::calculateDSandFS() {
 	uint featuresSizeBuffer[1];
 	uint datasizeBuffer[1];
@@ -57,7 +61,6 @@ void RawData::calculateDSandFS() {
 void RawData::loadData() {
 	uint i, j;
 	t_data buffer[1];
-	//	Reservo espacio para SIZE punteros
 	data = (t_data*) calloc(featuresSize, sizeof(t_data) * datasize);
 	fseek(dataFile, 8, 0);
 	for (i = 0; i < datasize; i++) {
@@ -87,16 +90,10 @@ void RawData::calculateVR() {
 	}
 }
 
-/**
- *
- */
 uint RawData::getDataSize() {
 	return datasize;
 }
 
-/**
- *
- */
 uint RawData::getFeaturesSize() {
 	return featuresSize;
 }
@@ -109,7 +106,7 @@ uint RawData::getValuesRange(uint index) {
 }
 
 /**
- *
+ * Returns an array with the number of possible values for each feature.
  */
 uint * RawData::getValuesRangeArray() {
 	return this->valuesRange;

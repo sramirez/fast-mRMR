@@ -29,6 +29,8 @@ ProbTable::~ProbTable() {
 
 }
 
+//Calculates the marginal probability table for each posible value in a feature.
+//This table will be cached in memory to avoid repeating calculations. 
 void ProbTable::calculate() {
 	Histogram histogram = Histogram(rawData);
 	int i = 0;

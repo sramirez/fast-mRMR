@@ -33,7 +33,7 @@ JointProb::JointProb(RawData & rd, uint index1, uint index2) :
 JointProb::~JointProb() {
 	free(data);
 }
-
+//Calculates the joint probability between the given features.
 void JointProb::calculate() {
 	t_feature h_vector1 = rawData.getFeature(index1);
 	t_feature h_vector2 = rawData.getFeature(index2);
