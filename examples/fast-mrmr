@@ -1,0 +1,6 @@
+!#/bin/bash
+
+cd fast-mRMR/cpu/src
+make
+chmod +x fast-mrmr
+./fast-mrmr -f ../data.mrmr -n 50
