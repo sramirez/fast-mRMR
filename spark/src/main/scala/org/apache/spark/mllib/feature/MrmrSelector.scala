@@ -17,9 +17,6 @@
 
 package org.apache.spark.mllib.feature
 
-
-import breeze.linalg.{DenseVector => BDV, SparseVector => BSV, Vector => BV}
-
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.HashPartitioner
@@ -41,27 +38,34 @@ class MrmrSelector private[feature] extends Serializable {
   protected case class F(feat: Int, crit: Double) 
 
   /**
-   * Perform a info-theory selection process without pool optimization.
+   * Perform a info-theory selection process.
    * 
-   * @param data Data points (first element is the class attribute).
+   * @param data Columnar data (last element is the class attribute).
    * @param nToSelect Number of features to select.
+   * @param nFeatures Number of total features in the dataset.
    * @return A list with the most relevant features and its scores.
    * 
    */
-  private[feature] def selectFeatures(data: RDD[BV[Byte]], nToSelect: Int) = {
+  private[feature] def selectFeatures(
+      data: RDD[(Long, Byte)], 
+      nToSelect: Int,
+      nFeatures: Int) = {
     
-    val nElements = data.count()
-    val nFeatures = data.first.size - 1
-    val label = 0
+    val label = nFeatures - 1 
+    val nInstances = data.count() / nFeatures
+    val counterByKey = data.map({ case (k, v) => (k % nFeatures).toInt -> v})
+          .distinct().groupByKey().mapValues(_.max + 1).collectAsMap().toMap
     
     // calculate relevance
-    val mutualInfo = IT.computeMutualInfo(data, 1 to nFeatures, Seq(label), nElements, nFeatures)
-    var pool = mutualInfo.map{case ((x, y), mi) => (x, new MrmrCriterion(mi))}
+    val MiAndCmi = IT.computeMI(
+        data, 0 until label, label, nInstances, nFeatures, counterByKey)
+    var pool = MiAndCmi.map{case (x, mi) => (x, new MrmrCriterion(mi))}
       .collectAsMap()  
     // Print most relevant features
-    val strRels = mutualInfo.collect().sortBy(-_._2)
-      .take(100)
-      .map({case ((f, _), mi) => f + "\t" + "%.4f" format mi})
+    // Print most relevant features
+    val strRels = MiAndCmi.collect().sortBy(-_._2)
+      .take(nToSelect)
+      .map({case (f, mi) => (f + 1) + "\t" + "%.4f" format mi})
       .mkString("\n")
     println("\n*** MaxRel features ***\nFeature\tScore\n" + strRels)  
     // get maximum and select it
@@ -71,14 +75,14 @@ class MrmrSelector private[feature] extends Serializable {
 
     while (selected.size < nToSelect) {
       // update pool
-      val mutualInfo = IT.computeMutualInfo(data, pool.keys.toSeq, Seq(selected.head.feat), 
-        nElements, nFeatures) 
-        .map({ case ((x, _), crit) => (x, crit) })
-        .collectAsMap()
+      val newMiAndCmi = IT.computeMIandCMI(data, pool.keys.toSeq, selected.head.feat, 
+          label, nInstances, nFeatures, counterByKey) 
+          .map({ case (x, crit) => (x, crit) })
+          .collectAsMap()
         
       pool.foreach({ case (k, crit) =>
-        mutualInfo.get(k) match {
-          case Some(v) => crit.update(v)
+        newMiAndCmi.get(k) match {
+          case Some((mi, _)) => crit.update(mi)
           case None => 
         }
       })
@@ -88,8 +92,6 @@ class MrmrSelector private[feature] extends Serializable {
       // select the best feature and remove from the whole set of features
       selected = F(max._1, max._2.score) +: selected
       pool = pool - max._1
-      
-
     }    
     selected.reverse
   }
@@ -97,45 +99,50 @@ class MrmrSelector private[feature] extends Serializable {
   private[feature] def run(
       data: RDD[LabeledPoint], 
       nToSelect: Int, 
-      poolSize: Int = 30) = {
-        
-        val requireByteValues = (l: Double, v: Vector) => {        
-          val values = v match {
-            case SparseVector(size, indices, values) =>
-              values
-            case DenseVector(values) =>
-              values
-          }
-          val condition = (value: Double) => value <= Byte.MaxValue && 
-            value >= Byte.MinValue && value % 1 == 0.0
-          if (!values.forall(condition(_)) || !condition(l)) {
-            throw new SparkException(s"mRMR selector requires integer values in range [0, 255]")
-          }
-        }
-        
-        val byteData: RDD[BV[Byte]] = data.map {
-          case LabeledPoint(label, values: SparseVector) => 
-            requireByteValues(label, values)
-            new BSV[Byte](0 +: values.indices.map(_ + 1), 
-              label.toByte +: values.values.toArray.map(_.toByte), values.size + 1)
-          case LabeledPoint(label, values: DenseVector) => 
-            requireByteValues(label, values)
-            new BDV[Byte](label.toByte +: values.toArray.map(_.toByte))
-        }
-
-        byteData.persist(StorageLevel.MEMORY_AND_DISK_SER)
-        val nFeatures = byteData.first.size - 1
-        require(nToSelect < nFeatures)
-        
-        val selected = selectFeatures(byteData, nToSelect)
+      numPartitions: Int) = {
+    
+    val nPart = if(numPartitions == 0) data.context.getConf.getInt(
+        "spark.default.parallelism", 500) else numPartitions
       
-        byteData.unpersist()
-      
-        // Print best features according to the mRMR measure
-        val out = selected.map{case F(feat, rel) => feat + "\t" + "%.4f".format(rel)}.mkString("\n")
-        println("\n*** mRMR features ***\nFeature\tScore\n" + out)
-        // Features must be sorted
-        new SelectorModel(selected.map{case F(feat, rel) => feat - 1}.sorted.toArray)
+    val requireByteValues = (l: Double, v: Vector) => {        
+      val values = v match {
+        case SparseVector(size, indices, values) =>
+          values
+        case DenseVector(values) =>
+          values
+      }
+      val condition = (value: Double) => value <= Byte.MaxValue && 
+        value >= Byte.MinValue && value % 1 == 0.0
+      if (!values.forall(condition(_)) || !condition(l)) {
+        throw new SparkException(s"Info-Theoretic Framework requires positive values in range [0, 255]")
+      }           
+    }
+        
+    val nAllFeatures = data.first.features.size + 1        
+    val columnarData: RDD[(Long, Byte)] = data.zipWithIndex().flatMap ({
+      case (LabeledPoint(label, values: SparseVector), r) => 
+        requireByteValues(label, values)
+        // Not implemented yet!
+        throw new NotImplementedError()           
+      case (LabeledPoint(label, values: DenseVector), r) => 
+        requireByteValues(label, values)
+        val rindex = r * nAllFeatures
+        val inputs = for(i <- 0 until values.size) yield (rindex + i, values(i).toByte)
+        val output = Array((rindex + values.size, label.toByte))
+        inputs ++ output    
+    }).sortByKey(numPartitions = nPart) // put numPartitions parameter        
+    columnarData.persist(StorageLevel.MEMORY_AND_DISK_SER)  
+        
+    require(nToSelect < nAllFeatures)        
+    val selected = selectFeatures(columnarData, nToSelect, nAllFeatures)
+          
+    columnarData.unpersist()
+  
+    // Print best features according to the mRMR measure
+    val out = selected.map{case F(feat, rel) => (feat + 1) + "\t" + "%.4f".format(rel)}.mkString("\n")
+    println("\n*** mRMR features ***\nFeature\tScore\n" + out)
+    // Features must be sorted
+    new SelectorModel(selected.map{case F(feat, rel) => feat}.sorted.toArray)
     }
 }
 
@@ -147,6 +154,7 @@ object MrmrSelector {
    *
    * @param   data RDD of LabeledPoint (discrete data as integers in range [0, 255]).
    * @param   nToSelect maximum number of features to select
+   * @param   numPartitions number of partitions to structure the data.
    * @return  A mRMR selector that selects a subset of features from the original dataset.
    * 
    * Note: LabeledPoint data must be integer values in double representation 
@@ -154,8 +162,11 @@ object MrmrSelector {
    * to byte class directly, making the selection process much more efficient. 
    * 
    */
-  def train(data: RDD[LabeledPoint], nToSelect: Int = 25) = {
-    new MrmrSelector().run(data, nToSelect)
+  def train( 
+      data: RDD[LabeledPoint],
+      nToSelect: Int = 25,
+      numPartitions: Int = 0) = {
+    new MrmrSelector().run(data, nToSelect, numPartitions)
   }
 }
 
