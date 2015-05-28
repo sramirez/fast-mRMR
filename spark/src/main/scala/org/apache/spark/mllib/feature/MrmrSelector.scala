@@ -75,14 +75,14 @@ class MrmrSelector private[feature] extends Serializable {
 
     while (selected.size < nToSelect) {
       // update pool
-      val newMiAndCmi = IT.computeMIandCMI(data, pool.keys.toSeq, selected.head.feat, 
-          label, nInstances, nFeatures, counterByKey) 
+      val newMiAndCmi = IT.computeMI(data, pool.keys.toSeq, 
+          selected.head.feat, nInstances, nFeatures, counterByKey) 
           .map({ case (x, crit) => (x, crit) })
           .collectAsMap()
         
       pool.foreach({ case (k, crit) =>
         newMiAndCmi.get(k) match {
-          case Some((mi, _)) => crit.update(mi)
+          case Some(_) => crit.update(_)
           case None => 
         }
       })
