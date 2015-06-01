@@ -28,6 +28,7 @@
 
 using namespace std;
 
+//Returns the index of the higher value in the classRelevances Vector different from classIndex
 uint getMaxRelevance(vector<double> classRelevances, uint classIndex) {
 	uint i = 0;
 	uint newFeature = -1;
@@ -45,21 +46,25 @@ options parseOptions(int argc, char*argv[]) {
 	options opts;
 	opts.classIndex = 0;
 	opts.selectedFeatures = 10;
+	opts.file = "../data.mrmr";
+
 	if (argc > 1) {
 		for (int i = 0; i < argc; ++i) {
+			if (strcmp(argv[i], "-f") == 0) {
+				opts.file = argv[i + 1];
+			}
+			if (strcmp(argv[i], "-a") == 0) {
+				opts.selectedFeatures = atoi(argv[i + 1]) - 1;
+			}
 			if (strcmp(argv[i], "-c") == 0) {
 				opts.classIndex = atoi(argv[i + 1]) - 1;
 			}
-			if (strcmp(argv[i], "-f") == 0) {
-				opts.selectedFeatures = atoi(argv[i + 1]);
-			}
 			if (strcmp(argv[i], "-h") == 0) {
 				printf(
-						"Mrmr by Iago lastra:\nOptions:\n-c <index of class feature>\t\tUsed to select index of class feature. (from 1 to features Size)\n-f <number of mrmr features required>\t Indicates the number of features to select.\n-h Prints this message");
+						"fast-mrmr:\nOptions:\n -f <inputfile>\t\tMRMR file generated using mrmrReader (default: data.mrmr).\n-c <classindex>\t\tIndicates the class index in the dataset (default: 0).\n-a <nfeatures>\t Indicates the number of features to select (default: 10).\n-h Prints this message");
 				exit(0);
 			}
 		}
-		//cout << endl;
 	}
 	return opts;
 }
@@ -76,12 +81,13 @@ int main(int argc, char* argv[]) {
 	vector<double> redundances;
 	vector<int> selectedFeatures;
 
-
-	RawData rawData = RawData();
+	Timer tm;
+	opts = parseOptions(argc, argv);
+	RawData rawData = RawData(opts.file);
+	tm.start();
 	ProbTable prob = ProbTable(rawData);
 	MutualInfo mutualInfo = MutualInfo(rawData, prob);
-	opts = parseOptions(argc, argv);
-
+	
 
 
 	//Get relevances between all features and class.
@@ -95,10 +101,9 @@ int main(int argc, char* argv[]) {
 	selectedFeatures.push_back(newFeatureIndex);
 	lastFeatureIndex = newFeatureIndex;
 
-
 	cout << newFeatureIndex << ",";
 	//MRMR
-	while (selectedFeatures.size() < rawData.getFeaturesSize() - 1 //-1 porque la class feature se descarta
+	while (selectedFeatures.size() < rawData.getFeaturesSize() - 1 //-1 because class is discarded
 	and selectedFeatures.size() < opts.selectedFeatures) {
 		acum = -std::numeric_limits<double>::infinity();
 		for (j = 0; j < rawData.getFeaturesSize(); ++j) {
@@ -115,10 +120,9 @@ int main(int argc, char* argv[]) {
 			}
 		}
 		//Last feature doesn't prints comma.
-		if ((selectedFeatures.size() == (opts.selectedFeatures - 1))
-				or (selectedFeatures.size() == (rawData.getFeaturesSize() - 2))) {
+		if ( (selectedFeatures.size() == (opts.selectedFeatures - 1)) or (selectedFeatures.size() == (rawData.getFeaturesSize() -2)) ){
 			cout << newFeatureIndex;
-		} else {
+		}else{
 			cout << newFeatureIndex << ",";
 		}
 		selectedFeatures.push_back(newFeatureIndex);
