@@ -35,8 +35,8 @@
  * @param ds the number of data samples.
  * @param fs the number of features that each sample has.
  */
-RawData::RawData() {
-	dataFile = fopen("data.mrmr", "rb");
+RawData::RawData(char * filename) {
+	dataFile = fopen(filename, "rb");
 	calculateDSandFS();
 	loadData();
 	mallocGPU();
