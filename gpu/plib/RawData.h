@@ -24,7 +24,7 @@
 
 class RawData {
 public:
-	RawData();
+	RawData(char * filename);
 	virtual ~RawData();
 
 	void calculateVR();
