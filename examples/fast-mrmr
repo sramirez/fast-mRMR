@@ -3,4 +3,4 @@
 cd fast-mRMR/cpu/src
 make
 chmod +x fast-mrmr
-./fast-mrmr -f ../data.mrmr -n 50
+./fast-mrmr -f ../data.mrmr -a 50
